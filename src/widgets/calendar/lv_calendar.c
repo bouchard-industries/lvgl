@@ -36,6 +36,7 @@ static uint8_t get_day_of_week(uint32_t year, uint32_t month, uint32_t day);
 static uint8_t get_month_length(int32_t year, int32_t month);
 static uint8_t is_leap_year(uint32_t year);
 static void highlight_update(lv_obj_t * calendar);
+//void lv_calendar_set_date_text(lv_obj_t *obj, uint8_t day, const char *text);
 
 #if LV_USE_CALENDAR_CHINESE
 static lv_calendar_date_t gregorian_get_last_month_time(lv_calendar_date_t * time);
@@ -257,7 +258,7 @@ size_t lv_calendar_get_highlighted_dates_num(const lv_obj_t * obj)
 
 lv_result_t lv_calendar_get_pressed_date(const lv_obj_t * obj, lv_calendar_date_t * date)
 {
-    LV_ASSERT_OBJ(obj, MY_CLASS);
+      LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_calendar_t * calendar = (lv_calendar_t *)obj;
 
     uint32_t d = lv_buttonmatrix_get_selected_button(calendar->btnm);
@@ -270,8 +271,32 @@ lv_result_t lv_calendar_get_pressed_date(const lv_obj_t * obj, lv_calendar_date_
 
     const char * txt = lv_buttonmatrix_get_button_text(calendar->btnm, lv_buttonmatrix_get_selected_button(calendar->btnm));
 
-    if(txt[1] == 0) date->day = txt[0] - '0';
-    else date->day = (txt[0] - '0') * 10 + (txt[1] - '0');
+    // check \n*
+    char day_str[8] = {0};
+    const char *newline_pos = strchr(txt, '\n');
+    if(newline_pos) {
+        // only copy before \n
+        size_t len = newline_pos - txt;
+        if(len < sizeof(day_str) - 1) {
+            strncpy(day_str, txt, len);
+            day_str[len] = '\0';
+        }
+    } else {
+        
+        strncpy(day_str, txt, sizeof(day_str) - 1);
+    }
+
+    // date
+    if(strlen(day_str) == 1) {
+        date->day = day_str[0] - '0';
+    } else if(strlen(day_str) == 2) {
+        date->day = (day_str[0] - '0') * 10 + (day_str[1] - '0');
+    } else {
+        date->year = 0;
+        date->month = 0;
+        date->day = 0;
+        return LV_RESULT_INVALID;
+    }
 
     date->year = calendar->showed_date.year;
     date->month = calendar->showed_date.month;
@@ -361,19 +386,42 @@ static void draw_task_added_event_cb(lv_event_t * e)
         if(border_draw_dsc) border_draw_dsc->opa = LV_OPA_TRANSP;
     }
 
+    uint32_t selected = lv_buttonmatrix_get_selected_button(obj);
+    bool is_selected = (selected == (uint32_t)id);
+
+    // date that have event
     if(lv_buttonmatrix_has_button_ctrl(obj, id, LV_CALENDAR_CTRL_HIGHLIGHT)) {
-        if(border_draw_dsc) border_draw_dsc->color = lv_theme_get_color_primary(obj);
-        if(fill_draw_dsc) fill_draw_dsc->opa = LV_OPA_40;
-        if(fill_draw_dsc) fill_draw_dsc->color = lv_theme_get_color_primary(obj);
-        if(lv_buttonmatrix_get_selected_button(obj) == (uint32_t)id) {
-            if(fill_draw_dsc) fill_draw_dsc->opa = LV_OPA_70;
+        if(border_draw_dsc) {
+            border_draw_dsc->width = 1; 
+            border_draw_dsc->opa = LV_OPA_COVER;
+        }
+        
+        if(fill_draw_dsc) {
+            if(is_selected) {
+                //change background
+                fill_draw_dsc->color = lv_theme_get_color_primary(obj);
+                fill_draw_dsc->opa = LV_OPA_40; 
+            } else {
+                fill_draw_dsc->opa = LV_OPA_0; 
+            }
         }
     }
 
+    // today
     if(lv_buttonmatrix_has_button_ctrl(obj, id, LV_CALENDAR_CTRL_TODAY)) {
-        if(border_draw_dsc) border_draw_dsc->opa = LV_OPA_COVER;
-        if(border_draw_dsc) border_draw_dsc->color = lv_theme_get_color_primary(obj);
-        if(border_draw_dsc) border_draw_dsc->width += 1;
+        if(border_draw_dsc) {
+            border_draw_dsc->opa = LV_OPA_COVER;
+            border_draw_dsc->color = lv_palette_main(LV_PALETTE_RED); 
+            border_draw_dsc->width += 1;
+        }
+    }
+
+    // date dont have event clicked
+    if (is_selected && !lv_buttonmatrix_has_button_ctrl(obj, id, LV_CALENDAR_CTRL_HIGHLIGHT)) {
+        if (fill_draw_dsc) {
+            fill_draw_dsc->opa = LV_OPA_40;
+            fill_draw_dsc->color = lv_theme_get_color_primary(obj);
+        }
     }
 }
 
@@ -436,24 +484,72 @@ static void highlight_update(lv_obj_t * obj)
     lv_calendar_t * calendar = (lv_calendar_t *)obj;
     uint32_t i;
 
-    /*Clear all kind of selection*/
+    /* Clear all kind of selection flags */
     lv_buttonmatrix_clear_button_ctrl_all(calendar->btnm, LV_CALENDAR_CTRL_TODAY | LV_CALENDAR_CTRL_HIGHLIGHT);
 
-    uint8_t day_first = get_day_of_week(calendar->showed_date.year, calendar->showed_date.month, 1);
+    /*Remove any existing "\n•" (or other dot) from all day cells */
+    for(i = 0; i < 6 * 7; i++) {
+        char *txt = calendar->nums[i];
+        if(!txt) continue;
+
+        char *nl = strchr(txt, '\n');
+        if(nl) {
+            *nl = '\0';     /* Cut the string at '\n', keep only "DD" */
+        }
+    }
+
+    /*Compute the index of the first day of the month in the grid */
+    uint8_t day_first = get_day_of_week(calendar->showed_date.year,
+                                        calendar->showed_date.month, 1);
+
+    /*Apply highlight + dot for each highlighted date in this month */
     if(calendar->highlighted_dates) {
         for(i = 0; i < calendar->highlighted_dates_num; i++) {
-            if(calendar->highlighted_dates[i].year == calendar->showed_date.year &&
-               calendar->highlighted_dates[i].month == calendar->showed_date.month) {
-                lv_buttonmatrix_set_button_ctrl(calendar->btnm, calendar->highlighted_dates[i].day - 1 + day_first + 7,
-                                                LV_CALENDAR_CTRL_HIGHLIGHT);
+            lv_calendar_date_t *d = &calendar->highlighted_dates[i];
+
+            if(d->year == calendar->showed_date.year &&
+               d->month == calendar->showed_date.month)
+            {
+                uint8_t day = d->day;
+                if(day == 0 || day > 31) continue;
+
+                /* Button index in the button matrix (including header row) */
+                uint32_t btn_index = (day - 1) + day_first + 7;
+
+                /* nums[] index for that cell */
+                uint32_t cell_index = (day - 1) + day_first;
+                if(cell_index >= 6 * 7) continue;
+
+                /* Set highlight flag like before */
+                lv_buttonmatrix_set_button_ctrl(calendar->btnm, btn_index, LV_CALENDAR_CTRL_HIGHLIGHT);
+
+                /* Now add a "\n•" under the day number */
+                char *txt = calendar->nums[cell_index];
+                if(!txt) continue;
+                if(strchr(txt, '\n')){
+                    continue;
+                }
+                /* Avoid overflow */
+                size_t len = strlen(txt);
+                if(len + 2 < sizeof(calendar->nums[0])) {
+                    txt[len]   = '\n';
+                    txt[len+1] = '*'; 
+                    txt[len+2] = '\0';
+                }
             }
         }
     }
 
-    if(calendar->showed_date.year == calendar->today.year && calendar->showed_date.month == calendar->today.month) {
-        lv_buttonmatrix_set_button_ctrl(calendar->btnm, calendar->today.day - 1 + day_first + 7, LV_CALENDAR_CTRL_TODAY);
+    /* 4) Mark "today" with the special border as before */
+    if(calendar->showed_date.year  == calendar->today.year &&
+       calendar->showed_date.month == calendar->today.month)
+    {
+        lv_buttonmatrix_set_button_ctrl(calendar->btnm,
+                                        calendar->today.day - 1 + day_first + 7,
+                                        LV_CALENDAR_CTRL_TODAY);
     }
 }
+
 
 #if LV_USE_CALENDAR_CHINESE
 
@@ -498,6 +594,9 @@ static void chinese_calendar_set_day_name(lv_obj_t * obj, uint8_t index, uint8_t
     else
         lv_snprintf(calendar->nums[index], sizeof(calendar->nums[0]), "%d", day);
 }
+
+
+
 #endif
 
 #endif  /*LV_USE_CALENDAR*/
