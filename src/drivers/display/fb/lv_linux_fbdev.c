@@ -253,6 +253,15 @@ void lv_linux_fbdev_set_force_refresh(lv_display_t * disp, bool enabled)
  *   STATIC FUNCTIONS
  **********************/
 
+static int pixel_is_white_from_rgb8888(const uint8_t *p)
+{
+    uint8_t r = p[1];
+    uint8_t g = p[2];
+    uint8_t b = p[3];
+    int lum = (r * 299 + g * 587 + b * 114) / 1000;
+    return lum > 180 ? 1 : 0;
+}
+
 static void write_to_fb(lv_linux_fb_t * dsc, uint32_t fb_pos, const void * data, size_t sz)
 {
 #if LV_LINUX_FBDEV_MMAP
@@ -332,7 +341,7 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * colo
         (area->x1 + dsc->vinfo.xoffset) * px_size +
         (area->y1 + dsc->vinfo.yoffset) * dsc->finfo.line_length;
 
-    int32_t y;
+    int32_t y, x;
     if(LV_LINUX_FBDEV_RENDER_MODE == LV_DISPLAY_RENDER_MODE_DIRECT) {
         uint32_t color_pos =
             area->x1 * px_size +
@@ -347,9 +356,14 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * colo
     else {
         w = lv_area_get_width(area);
         for(y = area->y1; y <= area->y2; y++) {
-            write_to_fb(dsc, fb_pos, color_p, w * px_size);
-            fb_pos += dsc->finfo.line_length;
-            color_p += w * px_size;
+            for(x = area->x1; x <= area->x2; x++) {
+                int is_white = pixel_is_white_from_rgb8888(color_p);
+                uint32_t color = is_white ? 0xFFFFFFFF : 0x00000000;
+                write_to_fb(dsc, fb_pos, (uint8_t*)&color, px_size);
+                fb_pos += px_size;
+                color_p += px_size;
+            }
+            fb_pos += dsc->finfo.line_length - (w * px_size);
         }
     }
 
