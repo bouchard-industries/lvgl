@@ -259,7 +259,7 @@ static int pixel_is_white_from_rgb8888(const uint8_t *p)
     uint8_t g = p[2];
     uint8_t b = p[3];
     int lum = (r * 299 + g * 587 + b * 114) / 1000;
-    return lum > 180 ? 1 : 0;
+    return lum > 205 ? 1 : 0;
 }
 
 static void write_to_fb(lv_linux_fb_t * dsc, uint32_t fb_pos, const void * data, size_t sz)
