@@ -699,7 +699,7 @@ static void indev_pointer_proc(lv_indev_t * i, lv_indev_data_t * data)
     i->pointer.last_raw_point.x = data->point.x;
     i->pointer.last_raw_point.y = data->point.y;
 
-#if LV_USE_WIRINGPI_TOUCH == 0
+#if LV_USE_WIRINGPI_TOUCH == 0 && LV_USE_I2C_TOUCH == 0
     if(disp->rotation == LV_DISPLAY_ROTATION_180 || disp->rotation == LV_DISPLAY_ROTATION_270) {
         data->point.x = disp->hor_res - data->point.x - 1;
         data->point.y = disp->ver_res - data->point.y - 1;

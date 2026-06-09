@@ -375,7 +375,7 @@ typedef struct _lv_xml_component_ctx_t lv_xml_component_ctx_t;
 
 typedef struct _lv_xml_parser_state_t lv_xml_parser_state_t;
 
-#if LV_USE_EVDEV || LV_USE_WIRINGPI_TOUCH
+#if LV_USE_EVDEV || LV_USE_WIRINGPI_TOUCH || LV_USE_I2C_TOUCH
 typedef struct _lv_evdev_discovery_t lv_evdev_discovery_t;
 #endif
 
